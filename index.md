@@ -1,6 +1,6 @@
 ## Welcome to Taylan's website.
 
-TODO: Insert picture of me (or cartoon render)
+[]("../Ty_pic.jpg")
 
 I work at: [Niagara University](https://niagara.edu)  
 
