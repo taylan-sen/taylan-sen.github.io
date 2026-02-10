@@ -12,3 +12,5 @@ Classes that I teach:
 
 Fun projects:
 * Creating music with AI. (click here to hear my latest AI generated music track).
+
+[My AI mp3](./TysCompEdOpera.mp3)
