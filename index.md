@@ -1,6 +1,6 @@
 ## Welcome to Taylan's website.
 
-[]("../Ty_pic.jpg")
+![](./Ty_pic.jpg)
 
 I work at: [Niagara University](https://niagara.edu)  
 
