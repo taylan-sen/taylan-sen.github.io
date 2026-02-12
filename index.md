@@ -1,7 +1,7 @@
 ## Welcome to Taylan's website.
 
 ![](./Ty_pic.jpg)
-[my html page](https://taylan-sen.github.io/test.html)
+[my html page](https://taylan-sen.github.io/new.html)
 I work at: [Niagara University](https://niagara.edu)  
 
 Classes that I teach:
