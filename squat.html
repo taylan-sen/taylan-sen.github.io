@@ -211,83 +211,150 @@
   <a href="https://niagara.edu">Niagara University</a>
 </footer>
 
-<script>
-(() => {
-  const video = document.getElementById('video');
-  const canvas = document.getElementById('overlay');
-  const ctx = canvas.getContext('2d');
-  const placeholder = document.getElementById('placeholder');
-  const startBtn = document.getElementById('startBtn');
-  const stopBtn = document.getElementById('stopBtn');
-  const status = document.getElementById('status');
+<script type="module">
+import {
+  FilesetResolver,
+  PoseLandmarker,
+  DrawingUtils
+} from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs';
 
-  let stream = null;
-  let rafId = null;
+const WASM_URL = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm';
+const MODEL_URL = 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task';
 
-  // Called once per video frame while the camera is running.
-  // Hook MediaPipe in here later, e.g.:
-  //   const result = poseLandmarker.detectForVideo(video, timestamp);
-  //   ...draw result.landmarks onto ctx...
-  function onFrame(video, ctx, timestamp) {
-    ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-  }
+const video = document.getElementById('video');
+const canvas = document.getElementById('overlay');
+const ctx = canvas.getContext('2d');
+const draw = new DrawingUtils(ctx);
+const placeholder = document.getElementById('placeholder');
+const startBtn = document.getElementById('startBtn');
+const stopBtn = document.getElementById('stopBtn');
+const status = document.getElementById('status');
 
-  function loop(timestamp) {
-    if (!stream) return;
-    if (video.readyState >= 2) onFrame(video, ctx, timestamp);
-    rafId = requestAnimationFrame(loop);
-  }
+let stream = null;
+let rafId = null;
+let poseLandmarker = null;
+let poseLoading = null;
+let lastVideoTime = -1;
 
-  async function start() {
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      status.textContent = 'This browser does not support camera access (it needs https or localhost).';
-      return;
-    }
-    startBtn.disabled = true;
-    status.textContent = 'Requesting camera…';
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } },
-        audio: false
+// Load the pose model once (tries the GPU first, falls back to CPU).
+function loadPose() {
+  if (!poseLoading) {
+    poseLoading = (async () => {
+      const vision = await FilesetResolver.forVisionTasks(WASM_URL);
+      const options = (delegate) => ({
+        baseOptions: { modelAssetPath: MODEL_URL, delegate },
+        runningMode: 'VIDEO',
+        numPoses: 1
       });
-    } catch (err) {
-      stream = null;
-      startBtn.disabled = false;
-      status.textContent = err.name === 'NotAllowedError'
-        ? 'Camera permission was denied. Allow it in your browser settings and try again.'
-        : 'Could not start the camera: ' + err.message;
-      return;
-    }
-    video.srcObject = stream;
-    await video.play();
-    // Match the drawing surface to the real camera resolution.
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    video.hidden = false;
-    canvas.hidden = false;
-    placeholder.hidden = true;
-    stopBtn.disabled = false;
-    status.textContent = 'Camera on (' + video.videoWidth + '×' + video.videoHeight + ')';
-    rafId = requestAnimationFrame(loop);
+      try {
+        poseLandmarker = await PoseLandmarker.createFromOptions(vision, options('GPU'));
+      } catch (err) {
+        console.warn('GPU pose model failed, using CPU:', err);
+        poseLandmarker = await PoseLandmarker.createFromOptions(vision, options('CPU'));
+      }
+      return poseLandmarker;
+    })();
+    poseLoading.catch(() => { poseLoading = null; }); // allow retry
   }
+  return poseLoading;
+}
 
-  function stop() {
-    if (rafId) cancelAnimationFrame(rafId);
-    rafId = null;
-    if (stream) stream.getTracks().forEach(t => t.stop());
+// Called once per new video frame while the camera is running.
+// The canvas is mirrored together with the video (CSS), so landmarks
+// can be drawn in raw camera coordinates and still line up.
+function onFrame(video, ctx, timestamp) {
+  ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+  if (!poseLandmarker) return;
+
+  const result = poseLandmarker.detectForVideo(video, timestamp);
+  const lineWidth = Math.max(2, ctx.canvas.width / 200);
+  for (const landmarks of result.landmarks) {
+    draw.drawConnectors(landmarks, PoseLandmarker.POSE_CONNECTIONS, {
+      color: '#f2c75c', // gold
+      lineWidth
+    });
+    draw.drawLandmarks(landmarks, {
+      color: '#2a0845', // dark purple outline
+      fillColor: '#b48ce6', // light purple
+      lineWidth: lineWidth / 2,
+      radius: lineWidth * 1.2
+    });
+  }
+  // result.landmarks[0] holds the 33 body points (x, y in 0–1).
+  // Squat counting can be built on top of these later.
+}
+
+function loop() {
+  if (!stream) return;
+  if (video.readyState >= 2 && video.currentTime !== lastVideoTime) {
+    lastVideoTime = video.currentTime;
+    onFrame(video, ctx, performance.now());
+  }
+  rafId = requestAnimationFrame(loop);
+}
+
+async function start() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    status.textContent = 'This browser does not support camera access (it needs https or localhost).';
+    return;
+  }
+  startBtn.disabled = true;
+  status.textContent = 'Requesting camera…';
+  const modelReady = loadPose(); // download the model while the camera starts
+  modelReady.catch(() => {});
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } },
+      audio: false
+    });
+  } catch (err) {
     stream = null;
-    video.srcObject = null;
-    video.hidden = true;
-    canvas.hidden = true;
-    placeholder.hidden = false;
     startBtn.disabled = false;
-    stopBtn.disabled = true;
-    status.textContent = 'Camera off';
+    status.textContent = err.name === 'NotAllowedError'
+      ? 'Camera permission was denied. Allow it in your browser settings and try again.'
+      : 'Could not start the camera: ' + err.message;
+    return;
   }
+  video.srcObject = stream;
+  await video.play();
+  // Match the drawing surface to the real camera resolution.
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  video.hidden = false;
+  canvas.hidden = false;
+  placeholder.hidden = true;
+  stopBtn.disabled = false;
+  lastVideoTime = -1;
+  rafId = requestAnimationFrame(loop);
 
-  startBtn.addEventListener('click', start);
-  stopBtn.addEventListener('click', stop);
-})();
+  const size = video.videoWidth + '×' + video.videoHeight;
+  if (!poseLandmarker) status.textContent = 'Camera on (' + size + ') · loading skeleton tracking…';
+  try {
+    await modelReady;
+    if (stream) status.textContent = 'Camera on (' + size + ') · skeleton tracking on';
+  } catch (err) {
+    console.error(err);
+    if (stream) status.textContent = 'Camera on (' + size + ') · skeleton tracking failed to load';
+  }
+}
+
+function stop() {
+  if (rafId) cancelAnimationFrame(rafId);
+  rafId = null;
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  stream = null;
+  video.srcObject = null;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  video.hidden = true;
+  canvas.hidden = true;
+  placeholder.hidden = false;
+  startBtn.disabled = false;
+  stopBtn.disabled = true;
+  status.textContent = 'Camera off';
+}
+
+startBtn.addEventListener('click', start);
+stopBtn.addEventListener('click', stop);
 </script>
 
 </body>
