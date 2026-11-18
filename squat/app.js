@@ -16,6 +16,7 @@ import {
   DrawingUtils
 } from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs';
 import { createCounters } from './counters.js';
+import { launchBalloons } from './balloons.js';
 import {
   createSession, addFrame, finishSession, sessionToJSON, parseSession, replaySession
 } from './datafile.js';
@@ -90,6 +91,11 @@ function loadPoseModel() {
 // ---------------------------------------------------------------------
 // 2. Scoreboard
 // ---------------------------------------------------------------------
+// Balloons go up once, when either counter first reaches this many reps.
+// Resetting the counts arms them again.
+const PARTY_AT = 10;
+let partyDone = false;
+
 function showCounts(legsMessage, headMessage) {
   $('legsCount').textContent = counters.legs.count;
   $('headCount').textContent = counters.head.count;
@@ -98,11 +104,17 @@ function showCounts(legsMessage, headMessage) {
   // A box lights up while its counter thinks you're at the bottom.
   $('legsScore').classList.toggle('down', counters.legs.isDown);
   $('headScore').classList.toggle('down', counters.head.isDown);
+
+  if (!partyDone && Math.max(counters.legs.count, counters.head.count) >= PARTY_AT) {
+    partyDone = true;
+    launchBalloons(PARTY_AT + ' SQUATS!');
+  }
 }
 
 function resetCounts() {
   counters.legs.reset();
   counters.head.reset();
+  partyDone = false;
   showCounts('knee angle —', 'head drop —');
 }
 
@@ -396,7 +408,8 @@ async function openDataFile(file) {
 }
 
 function replayInPage(session) {
-  const result = replaySession(session, counters);
+  const result = replaySession(session, counters); // resets the counters first
+  partyDone = false;
   showCounts(result.legsMessage, result.headMessage);
   return result;
 }
@@ -404,9 +417,11 @@ function replayInPage(session) {
 // For tuning from the browser console, e.g.:
 //   squat.counters.legs.settings.downBelow = 110
 //   squat.replay()        → counts for the loaded data file
+//   squat.party()         → preview the balloons
 window.squat = {
   counters,
-  replay: (session = state.session) => replayInPage(session)
+  replay: (session = state.session) => replayInPage(session),
+  party: () => launchBalloons(PARTY_AT + ' SQUATS!')
 };
 
 // ---------------------------------------------------------------------
