@@ -7,7 +7,7 @@
 // The tests use a simulated person (a simple side-view stick figure), not
 // real camera data, so they check the logic, not MediaPipe's accuracy.
 
-import { LANDMARK, angleAt, LegsCounter, HeadCounter, createCounters } from './counters.js';
+import { LANDMARK, angleAt, LegsCounter, HeadCounter, SquatCounter } from './counters.js';
 import {
   createSession, addFrame, finishSession, sessionToJSON, parseSession, replaySession,
   packLandmarks, unpackLandmarks
@@ -85,6 +85,13 @@ function poses(angles, seed = 1, jitter = 3) {
   return angles.map(a => simulatedPose(a, random, jitter));
 }
 
+// A copy of a pose with some points made invisible.
+function hide(pose, ...points) {
+  const copy = pose.slice();
+  for (const i of points) copy[i] = { ...copy[i], visibility: 0.1 };
+  return copy;
+}
+
 function feed(counter, poseList) {
   let message = '';
   for (const p of poseList) message = counter.update(p, FRAME);
@@ -129,12 +136,11 @@ const tests = [
   }],
 
   ['standing still with jitter counts nothing', () => {
-    const { legs, head } = createCounters();
-    const still = poses(new Array(300).fill(172), 2, 8);
-    feed(legs, still);
-    feed(head, still);
-    assertEqual(legs.count, 0, 'legs count');
-    assertEqual(head.count, 0, 'head count');
+    const counter = new SquatCounter();
+    feed(counter, poses(new Array(300).fill(172), 2, 8));
+    assertEqual(counter.legs.count, 0, 'legs count');
+    assertEqual(counter.head.count, 0, 'head count');
+    assertEqual(counter.count, 0, 'combined count');
   }],
 
   ['quarter squats (knees to 140°) are not counted by the legs counter', () => {
@@ -190,12 +196,11 @@ const tests = [
   }],
 
   ['a saved data file replays to the same counts as live', () => {
-    const live = createCounters();
+    const live = new SquatCounter();
     const session = createSession({ source: 'test', width: FRAME.width, height: FRAME.height, model: 'test' });
     const list = poses(squatAngles(4), 5);
     list.forEach((p, i) => {
-      live.legs.update(p, FRAME);
-      live.head.update(p, FRAME);
+      live.update(p, FRAME);
       addFrame(session, i / 30, p);
     });
     addFrame(session, list.length / 30, null); // a frame with nobody in it
@@ -203,18 +208,91 @@ const tests = [
 
     const loaded = parseSession(sessionToJSON(session));
     assertEqual(loaded.labels.reps, 4, 'saved actual reps');
-    assertEqual(loaded.results.legs, live.legs.count, 'saved legs result');
-    const replayed = replaySession(loaded, createCounters());
+    assertEqual(loaded.results.count, live.count, 'saved combined result');
+    const replayed = replaySession(loaded, new SquatCounter());
+    assertEqual(replayed.count, live.count, 'replayed combined count');
     assertEqual(replayed.legs, live.legs.count, 'replayed legs count');
     assertEqual(replayed.head, live.head.count, 'replayed head count');
-    assertEqual(replayed.legs, 4, 'legs count');
+    assertEqual(replayed.count, 4, 'combined count');
   }],
 
   ['replay can try new settings on the same data', () => {
     const session = createSession({ source: 'test', width: FRAME.width, height: FRAME.height, model: 'test' });
     poses(squatAngles(3, 80), 6).forEach((p, i) => addFrame(session, i / 30, p));
-    assertEqual(replaySession(session, createCounters()).legs, 3, 'default settings');
-    assertEqual(replaySession(session, createCounters({ legs: { downBelow: 70 } })).legs, 0, 'stricter settings');
+    assertEqual(replaySession(session, new SquatCounter()).legs, 3, 'default settings');
+    assertEqual(replaySession(session, new SquatCounter({ legs: { downBelow: 70 } })).legs, 0, 'stricter settings');
+  }],
+
+  // ----- The combined counter -----
+
+  ['combined: a squat both algorithms see counts once', () => {
+    const counter = new SquatCounter();
+    feed(counter, poses(squatAngles(5)));
+    assertEqual(counter.legs.count, 5, 'legs alone');
+    assertEqual(counter.head.count, 5, 'head alone');
+    assertEqual(counter.count, 5, 'combined count');
+  }],
+
+  ['combined: counts squats only the head sees (legs hidden)', () => {
+    const counter = new SquatCounter();
+    feed(counter, poses(squatAngles(3)).map(p => hide(p, LANDMARK.LEFT_ANKLE, LANDMARK.RIGHT_ANKLE)));
+    assertEqual(counter.legs.count, 0, 'legs alone');
+    assertEqual(counter.count, 3, 'combined count');
+  }],
+
+  ['combined: counts squats only the legs see (head hidden)', () => {
+    const counter = new SquatCounter();
+    feed(counter, poses(squatAngles(3)).map(p => hide(p, LANDMARK.NOSE)));
+    assertEqual(counter.head.count, 0, 'head alone');
+    assertEqual(counter.count, 3, 'combined count');
+  }],
+
+  ['combined: adds up squats seen by different algorithms', () => {
+    // 2 squats with the legs hidden, then 2 with the head hidden.
+    const counter = new SquatCounter();
+    const all = poses(squatAngles(4));
+    const middle = Math.floor(all.length / 2);
+    feed(counter, all.map((p, i) => i < middle
+      ? hide(p, LANDMARK.LEFT_ANKLE, LANDMARK.RIGHT_ANKLE)
+      : hide(p, LANDMARK.NOSE)));
+    assertEqual(counter.count, 4, 'combined count');
+  }],
+
+  ['combined: one stuck algorithm does not block the other', () => {
+    // The head never comes back "up" (upAbove below zero is impossible).
+    const counter = new SquatCounter({ head: { upAbove: -1 } });
+    feed(counter, poses(squatAngles(4)));
+    assertEqual(counter.head.count, 0, 'head alone');
+    assertEqual(counter.count, 4, 'combined count');
+  }],
+
+  ['combined: overlapping reps match, separate reps add up', () => {
+    const overlap = new SquatCounter();
+    overlap.addRep('legs', 10, 40);
+    overlap.addRep('head', 30, 60);
+    assertEqual(overlap.count, 1, 'overlapping reps');
+
+    const nearby = new SquatCounter();
+    nearby.addRep('legs', 10, 40);
+    nearby.addRep('head', 45, 70); // starts 5 frames after: within the gap
+    assertEqual(nearby.count, 1, 'reps within the gap');
+
+    const apart = new SquatCounter();
+    apart.addRep('legs', 10, 40);
+    apart.addRep('head', 100, 130);
+    assertEqual(apart.count, 2, 'separate reps');
+
+    const sameAlgorithm = new SquatCounter();
+    sameAlgorithm.addRep('legs', 10, 40);
+    sameAlgorithm.addRep('legs', 35, 60);
+    assertEqual(sameAlgorithm.count, 2, 'two reps from the same algorithm');
+
+    // A rep can only be matched once: legs, head (matches), legs again.
+    const chain = new SquatCounter();
+    chain.addRep('legs', 10, 40);
+    chain.addRep('head', 35, 70);
+    chain.addRep('legs', 65, 100);
+    assertEqual(chain.count, 2, 'chained reps');
   }],
 
   ['a file that is not a data file is rejected', () => {

@@ -124,10 +124,8 @@
     color: #fff;
   }
   .scoreboard {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 12px;
-    margin-top: 14px;
+    max-width: 360px;
+    margin: 14px auto 0;
   }
   .score {
     background: rgba(255, 255, 255, 0.08);
@@ -142,7 +140,7 @@
     color: var(--purple-light);
   }
   .score .count {
-    font-size: clamp(2.6rem, 12vw, 4.5rem);
+    font-size: clamp(3.2rem, 16vw, 6rem);
     font-weight: 900;
     line-height: 1.1;
     color: var(--gold);
@@ -224,7 +222,7 @@
     <button id="startBtn">Start camera</button>
     <button id="recordBtn" class="secondary" disabled>Record</button>
     <button id="stopBtn" class="secondary" disabled>Stop</button>
-    <button id="resetBtn" class="secondary">Reset counts</button>
+    <button id="resetBtn" class="secondary">Reset count</button>
   </div>
   <div class="controls">
     <button id="openVideoBtn" class="secondary">Open video…</button>
@@ -235,14 +233,10 @@
     <input type="file" id="dataFile" accept=".json,application/json" hidden>
   </div>
   <div class="scoreboard">
-    <div class="score" id="legsScore">
-      <div class="label">Legs count</div>
-      <div class="count" id="legsCount">0</div>
+    <div class="score" id="squatScore">
+      <div class="label">Squats</div>
+      <div class="count" id="squatCount">0</div>
       <div class="detail" id="legsDetail">knee angle —</div>
-    </div>
-    <div class="score" id="headScore">
-      <div class="label">Head count</div>
-      <div class="count" id="headCount">0</div>
       <div class="detail" id="headDetail">head drop —</div>
     </div>
   </div>

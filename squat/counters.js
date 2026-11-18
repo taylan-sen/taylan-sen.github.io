@@ -1,10 +1,11 @@
 // Squat counting algorithms.
 //
-// Both counters read MediaPipe pose landmarks: 33 body points, each with
-// x and y from 0 to 1 (fractions of the frame width and height) and a
-// visibility score from 0 to 1.
+// Two counting algorithms, LEGS and HEAD, read MediaPipe pose landmarks:
+// 33 body points, each with x and y from 0 to 1 (fractions of the frame
+// width and height) and a visibility score from 0 to 1. SquatCounter (at
+// the bottom) combines them into the one count shown on the page.
 //
-// They work the same way: measure one number every frame, then feed it
+// Both algorithms work the same way: measure one number every frame, then feed it
 // to a two-state machine (UP / DOWN). Going DOWN and coming back UP use
 // different thresholds, so a measurement wobbling around one threshold
 // can't count extra reps. A rep counts when the person comes back UP.
@@ -195,10 +196,74 @@ export class HeadCounter {
   }
 }
 
-// Both counters together, so callers can update and reset them as one.
-export function createCounters(settings = {}) {
-  return {
-    legs: new LegsCounter(settings.legs),
-    head: new HeadCounter(settings.head)
+// ---------------------------------------------------------------------
+// The combined counter: ONE squat count from both algorithms.
+//
+// A rep counts when either algorithm detects one. Usually both detect
+// the same squat, so it must not count twice. Each algorithm's rep spans
+// the frames from going DOWN to coming back UP; if a rep from one
+// algorithm overlaps the last counted rep from the other (allowing a
+// small gap), it's the same squat and is not counted again.
+//
+// So a squat only one algorithm catches (e.g. legs out of view) still
+// counts, and one algorithm getting stuck can't block the other.
+// ---------------------------------------------------------------------
+export class SquatCounter {
+  static DEFAULTS = {
+    // Reps this many frames apart (or overlapping) are the same squat.
+    // 10 frames is about 1/3 second at 30 frames per second.
+    sameSquatGap: 10
   };
+
+  constructor(settings = {}) {
+    this.legs = new LegsCounter(settings.legs);
+    this.head = new HeadCounter(settings.head);
+    this.settings = { ...SquatCounter.DEFAULTS, ...settings.combined };
+    this.reset();
+  }
+
+  reset() {
+    this.legs.reset();
+    this.head.reset();
+    this.count = 0;
+    this.frameNumber = 0;
+    this.downSince = { legs: null, head: null }; // frame each went DOWN
+    this.lastRep = null; // the last counted rep: { by, start, end, matched }
+  }
+
+  // Lit up on the page while either algorithm thinks you're at the bottom.
+  get isDown() {
+    return this.legs.isDown || this.head.isDown;
+  }
+
+  // Returns each algorithm's message: { legs, head }.
+  update(landmarks, frame) {
+    this.frameNumber++;
+    const messages = {};
+    for (const name of ['legs', 'head']) {
+      const algorithm = this[name];
+      const wasDown = algorithm.isDown;
+      const countBefore = algorithm.count;
+      messages[name] = algorithm.update(landmarks, frame);
+      if (!wasDown && algorithm.isDown) this.downSince[name] = this.frameNumber;
+      if (algorithm.count > countBefore) this.addRep(name, this.downSince[name], this.frameNumber);
+    }
+    return messages;
+  }
+
+  // An algorithm finished a rep spanning frames start..end.
+  addRep(by, start, end) {
+    const last = this.lastRep;
+    const gap = this.settings.sameSquatGap;
+    const sameSquat = last
+      && last.by !== by       // the other algorithm counted it…
+      && !last.matched        // …and nobody has claimed that rep yet…
+      && start <= last.end + gap && last.start <= end + gap; // …at the same time
+    if (sameSquat) {
+      last.matched = true; // both algorithms saw this squat
+      return;
+    }
+    this.count++;
+    this.lastRep = { by, start, end, matched: false };
+  }
 }

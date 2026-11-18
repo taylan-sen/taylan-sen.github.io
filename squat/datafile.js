@@ -9,8 +9,9 @@
 //   model: MediaPipe model name,
 //   width, height: video size in pixels,
 //   labels:   { reps: the true rep count typed in, or null },
-//   results:  { legs, head }: what the counters got,
-//   settings: { legs: {...}, head: {...} }: counter settings used,
+//   results:  { count, legs, head }: the combined count, and what each
+//             algorithm counted on its own,
+//   settings: { legs, head, combined }: counter settings used,
 //   frames:   [ { t: seconds, lm: 33 × [x, y, z, visibility] or null } ]
 // }
 
@@ -50,12 +51,14 @@ export function addFrame(session, seconds, landmarks) {
 }
 
 // Store the results, settings and true rep count before saving.
-export function finishSession(session, counters, actualReps) {
+// counter = a SquatCounter (see counters.js).
+export function finishSession(session, counter, actualReps) {
   session.labels.reps = Number.isInteger(actualReps) ? actualReps : null;
-  session.results = { legs: counters.legs.count, head: counters.head.count };
+  session.results = { count: counter.count, legs: counter.legs.count, head: counter.head.count };
   session.settings = {
-    legs: { ...counters.legs.settings },
-    head: { ...counters.head.settings }
+    legs: { ...counter.legs.settings },
+    head: { ...counter.head.settings },
+    combined: { ...counter.settings }
   };
   return session;
 }
@@ -78,25 +81,21 @@ export function parseSession(text) {
   return data;
 }
 
-// Run every saved frame through the counters (after resetting them).
-// Returns the counts, the true count, and each counter's last message.
-export function replaySession(session, counters) {
+// Run every saved frame through a SquatCounter (after resetting it).
+// Returns the combined count, each algorithm's own count, the true count,
+// and each algorithm's last message.
+export function replaySession(session, counter) {
   const frame = { width: session.width, height: session.height };
-  counters.legs.reset();
-  counters.head.reset();
-  let legsMessage = 'no legs found';
-  let headMessage = 'no head found';
+  counter.reset();
+  let messages = { legs: 'no legs found', head: 'no head found' };
   for (const { lm } of session.frames) {
-    if (!lm) continue;
-    const landmarks = unpackLandmarks(lm);
-    legsMessage = counters.legs.update(landmarks, frame);
-    headMessage = counters.head.update(landmarks, frame);
+    if (lm) messages = counter.update(unpackLandmarks(lm), frame);
   }
   return {
-    legs: counters.legs.count,
-    head: counters.head.count,
+    count: counter.count,
+    legs: counter.legs.count,
+    head: counter.head.count,
     actual: session.labels?.reps ?? null,
-    legsMessage,
-    headMessage
+    messages
   };
 }

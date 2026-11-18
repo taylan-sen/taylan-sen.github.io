@@ -15,7 +15,7 @@ import {
   PoseLandmarker,
   DrawingUtils
 } from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs';
-import { createCounters } from './counters.js';
+import { SquatCounter } from './counters.js';
 import { launchBalloons } from './balloons.js';
 import {
   createSession, addFrame, finishSession, sessionToJSON, parseSession, replaySession
@@ -44,7 +44,7 @@ const buttons = {
   saveData: $('saveDataBtn')
 };
 
-const counters = createCounters();
+const counter = new SquatCounter(); // one count from both algorithms
 
 // What's running right now.
 const state = {
@@ -91,31 +91,29 @@ function loadPoseModel() {
 // ---------------------------------------------------------------------
 // 2. Scoreboard
 // ---------------------------------------------------------------------
-// Balloons go up once, when either counter first reaches this many reps.
-// Resetting the counts arms them again.
+// Balloons go up once, when the count first reaches this many reps.
+// Resetting the count arms them again.
 const PARTY_AT = 10;
 let partyDone = false;
 
-function showCounts(legsMessage, headMessage) {
-  $('legsCount').textContent = counters.legs.count;
-  $('headCount').textContent = counters.head.count;
-  $('legsDetail').textContent = legsMessage;
-  $('headDetail').textContent = headMessage;
-  // A box lights up while its counter thinks you're at the bottom.
-  $('legsScore').classList.toggle('down', counters.legs.isDown);
-  $('headScore').classList.toggle('down', counters.head.isDown);
+// messages = { legs, head }: each algorithm's live measurement.
+function showCount(messages) {
+  $('squatCount').textContent = counter.count;
+  $('legsDetail').textContent = messages.legs;
+  $('headDetail').textContent = messages.head;
+  // The box lights up while either algorithm thinks you're at the bottom.
+  $('squatScore').classList.toggle('down', counter.isDown);
 
-  if (!partyDone && Math.max(counters.legs.count, counters.head.count) >= PARTY_AT) {
+  if (!partyDone && counter.count >= PARTY_AT) {
     partyDone = true;
     launchBalloons(PARTY_AT + ' SQUATS!');
   }
 }
 
-function resetCounts() {
-  counters.legs.reset();
-  counters.head.reset();
+function resetCount() {
+  counter.reset();
   partyDone = false;
-  showCounts('knee angle —', 'head drop —');
+  showCount({ legs: 'knee angle —', head: 'head drop —' });
 }
 
 // ---------------------------------------------------------------------
@@ -148,12 +146,9 @@ function processFrame() {
   // skeleton can be drawn in camera coordinates and still line up.
   if (landmarks) {
     drawSkeleton(landmarks);
-    showCounts(
-      counters.legs.update(landmarks, state.frame),
-      counters.head.update(landmarks, state.frame)
-    );
+    showCount(counter.update(landmarks, state.frame));
   } else {
-    showCounts('no person detected', 'no person detected');
+    showCount({ legs: 'no person detected', head: 'no person detected' });
   }
 
   // Save the landmarks while recording the camera or processing a video.
@@ -279,7 +274,7 @@ function readActualReps() {
 function saveDataFile() {
   const session = state.session;
   if (!session || session.frames.length === 0) return;
-  finishSession(session, counters, readActualReps());
+  finishSession(session, counter, readActualReps());
   downloadFile(new Blob([sessionToJSON(session)], { type: 'application/json' }), state.baseName + '.json');
 }
 
@@ -313,7 +308,7 @@ function startRecording() {
       + state.session.frames.length + ' frames)');
   };
 
-  resetCounts(); // so the saved counts match the recording
+  resetCount(); // so the saved counts match the recording
   state.baseName = 'squat-' + timestampForFileName();
   state.session = createSession({
     source: 'camera', width: state.frame.width, height: state.frame.height, model: MODEL_NAME
@@ -365,7 +360,7 @@ async function openVideo(file) {
     return;
   }
 
-  resetCounts();
+  resetCount();
   state.source = 'file';
   showVideo();
   state.baseName = file.name.replace(/\.[^.]+$/, '');
@@ -403,23 +398,24 @@ async function openDataFile(file) {
   $('actualReps').value = session.labels?.reps ?? '';
   buttons.saveData.disabled = false;
   const result = replayInPage(session);
-  setStatus('Replayed ' + file.name + ' (' + session.frames.length + ' frames): legs ' + result.legs
-    + ', head ' + result.head + (result.actual != null ? ', actual ' + result.actual : ''));
+  setStatus('Replayed ' + file.name + ' (' + session.frames.length + ' frames): '
+    + result.count + ' squats (legs alone ' + result.legs + ', head alone ' + result.head + ')'
+    + (result.actual != null ? ', actual ' + result.actual : ''));
 }
 
 function replayInPage(session) {
-  const result = replaySession(session, counters); // resets the counters first
+  const result = replaySession(session, counter); // resets the counter first
   partyDone = false;
-  showCounts(result.legsMessage, result.headMessage);
+  showCount(result.messages);
   return result;
 }
 
 // For tuning from the browser console, e.g.:
-//   squat.counters.legs.settings.downBelow = 110
+//   squat.counter.legs.settings.downBelow = 110
 //   squat.replay()        → counts for the loaded data file
 //   squat.party()         → preview the balloons
 window.squat = {
-  counters,
+  counter,
   replay: (session = state.session) => replayInPage(session),
   party: () => launchBalloons(PARTY_AT + ' SQUATS!')
 };
@@ -463,7 +459,7 @@ function pickFile(inputId, onPicked) {
 
 buttons.start.addEventListener('click', startCamera);
 buttons.stop.addEventListener('click', stop);
-buttons.reset.addEventListener('click', resetCounts);
+buttons.reset.addEventListener('click', resetCount);
 buttons.record.addEventListener('click', () => (state.recorder ? stopRecording() : startRecording()));
 buttons.openVideo.addEventListener('click', pickFile('videoFile', openVideo));
 buttons.openData.addEventListener('click', pickFile('dataFile', openDataFile));
