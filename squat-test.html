@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Squat Self-Test</title>
+<style>
+  :root {
+    --purple-dark: #2a0845;
+    --purple: #582c83;
+    --purple-light: #b48ce6;
+    --gold: #f2c75c;
+    --pass: #4ade80;
+    --fail: #f87171;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 32px 16px;
+    font-family: "Helvetica Neue", Arial, sans-serif;
+    color: #fff;
+    background: linear-gradient(160deg, var(--purple-dark), var(--purple) 60%, #7b3fb5);
+    min-height: 100vh;
+  }
+  main { max-width: 720px; margin: 0 auto; }
+  h1 { margin: 0 0 8px; color: var(--gold); }
+  p { color: var(--purple-light); }
+  a { color: var(--gold); }
+  #summary { font-size: 1.4rem; font-weight: bold; margin: 20px 0 12px; }
+  ul { list-style: none; padding: 0; margin: 0; }
+  li {
+    padding: 10px 14px;
+    margin-bottom: 8px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.08);
+    border-left: 6px solid var(--pass);
+  }
+  li.fail { border-left-color: var(--fail); }
+  li .error { display: block; margin-top: 4px; color: var(--fail); font-size: 0.9rem; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Squat counter self-test</h1>
+  <p>Checks the two squat counters and the data files using a simulated person.
+     <a href="squat.html">Back to the squat challenge</a></p>
+  <div id="summary">Running…</div>
+  <ul id="results"></ul>
+</main>
+
+<script type="module">
+  import { runSelfTests } from './squat/selftest.js';
+
+  const results = runSelfTests();
+  const list = document.getElementById('results');
+  for (const r of results) {
+    const item = document.createElement('li');
+    item.className = r.passed ? 'pass' : 'fail';
+    item.textContent = (r.passed ? '✓ ' : '✗ ') + r.name;
+    if (r.error) {
+      const error = document.createElement('span');
+      error.className = 'error';
+      error.textContent = r.error;
+      item.appendChild(error);
+    }
+    list.appendChild(item);
+  }
+  const failed = results.filter(r => !r.passed).length;
+  const summary = document.getElementById('summary');
+  summary.textContent = failed
+    ? failed + ' of ' + results.length + ' tests failed'
+    : 'All ' + results.length + ' tests passed';
+  summary.style.color = failed ? 'var(--fail)' : 'var(--pass)';
+</script>
+</body>
+</html>
