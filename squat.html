@@ -59,9 +59,20 @@
     height: 260px;
     object-fit: cover;
   }
-  /* Tint a regular bald eagle photo purple */
-  .purpleize {
-    filter: sepia(1) hue-rotate(225deg) saturate(3);
+  /* Human figure illustrations */
+  .person {
+    display: block;
+    width: 100%;
+    height: 260px;
+    fill: none;
+    stroke: var(--gold);
+    stroke-width: 9;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .person .ground {
+    stroke: var(--purple-light);
+    stroke-width: 4;
   }
   figcaption {
     padding: 10px 14px;
@@ -86,12 +97,26 @@
 
 <main class="gallery">
   <figure>
-    <img src="https://thumbs.dreamstime.com/b/eagle-symbol-strength-freedom-purple-plumage-adds-touch-royalty-to-its-already-majestic-appearance-278442740.jpg" alt="A majestic eagle with purple plumage">
-    <figcaption>Purple Eagle</figcaption>
+    <svg class="person" viewBox="0 0 200 260" role="img" aria-label="A person standing upright">
+      <line class="ground" x1="40" y1="238" x2="160" y2="238"/>
+      <circle cx="100" cy="40" r="18"/>
+      <line x1="100" y1="60" x2="100" y2="140"/>
+      <polyline points="100,74 82,108 78,138"/>
+      <polyline points="100,74 118,108 122,138"/>
+      <polyline points="100,140 92,188 90,234 76,236"/>
+      <polyline points="100,140 108,188 110,234 124,236"/>
+    </svg>
+    <figcaption>Standing</figcaption>
   </figure>
   <figure>
-    <img class="purpleize" src="https://upload.wikimedia.org/wikipedia/commons/thumb/d/db/Bald_eagle_about_to_fly_in_Alaska_%282016%29.jpg/1280px-Bald_eagle_about_to_fly_in_Alaska_%282016%29.jpg" alt="An eagle about to take flight, tinted purple">
-    <figcaption>Purple Eagle Taking Flight</figcaption>
+    <svg class="person" viewBox="0 0 200 260" role="img" aria-label="A person in a deep squat with arms reaching forward">
+      <line class="ground" x1="40" y1="238" x2="160" y2="238"/>
+      <circle cx="112" cy="84" r="18"/>
+      <line x1="104" y1="104" x2="78" y2="178"/>
+      <polyline points="100,116 132,124 164,124"/>
+      <polyline points="78,178 132,186 104,234 132,236"/>
+    </svg>
+    <figcaption>Squatting</figcaption>
   </figure>
   <figure>
     <img src="https://upload.wikimedia.org/wikipedia/commons/a/ab/3Falls_Niagara.jpg" alt="Panoramic view of Niagara Falls">
