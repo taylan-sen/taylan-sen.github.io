@@ -1,7 +1,8 @@
 ## Welcome to Taylan's website.
 
 ![](./Ty_pic.jpg)
-[my html page](https://taylan-sen.github.io/new.html)
+[my html page](https://taylan-sen.github.io/new.html)  
+[SQUAT CHALLENGE NU](https://taylan-sen.github.io/squat.html)  
 I work at: [Niagara University](https://niagara.edu)  
 
 Classes that I teach:
