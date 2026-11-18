@@ -12,6 +12,7 @@
     --gold: #f2c75c;
   }
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
   body {
     margin: 0;
     font-family: "Helvetica Neue", Arial, sans-serif;
@@ -36,6 +37,71 @@
     color: var(--purple-light);
     letter-spacing: 0.2em;
     text-transform: uppercase;
+  }
+  /* Camera capture */
+  .camera {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 8px 16px 0;
+    text-align: center;
+  }
+  .stage {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 4 / 3;
+    background: rgba(0, 0, 0, 0.35);
+    border: 2px solid var(--purple-light);
+    border-radius: 14px;
+    overflow: hidden;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  }
+  .stage video,
+  .stage canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transform: scaleX(-1); /* mirror, like a selfie camera */
+  }
+  .stage .placeholder {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    color: var(--purple-light);
+  }
+  .controls {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    flex-wrap: wrap;
+    margin-top: 14px;
+  }
+  .controls button {
+    font: inherit;
+    font-weight: bold;
+    padding: 10px 22px;
+    border-radius: 999px;
+    border: 2px solid var(--gold);
+    background: var(--gold);
+    color: var(--purple-dark);
+    cursor: pointer;
+  }
+  .controls button.secondary {
+    background: transparent;
+    color: var(--gold);
+  }
+  .controls button:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+  .status {
+    min-height: 1.4em;
+    margin-top: 10px;
+    color: var(--purple-light);
   }
   .gallery {
     display: grid;
@@ -95,6 +161,19 @@
   <div class="tagline">Go Purple Eagles!</div>
 </header>
 
+<section class="camera">
+  <div class="stage">
+    <video id="video" playsinline muted hidden></video>
+    <canvas id="overlay" hidden></canvas>
+    <div class="placeholder" id="placeholder">Press “Start camera” to begin</div>
+  </div>
+  <div class="controls">
+    <button id="startBtn">Start camera</button>
+    <button id="stopBtn" class="secondary" disabled>Stop</button>
+  </div>
+  <div class="status" id="status"></div>
+</section>
+
 <main class="gallery">
   <figure>
     <svg class="person" viewBox="0 0 200 260" role="img" aria-label="A person standing upright">
@@ -131,6 +210,85 @@
 <footer>
   <a href="https://niagara.edu">Niagara University</a>
 </footer>
+
+<script>
+(() => {
+  const video = document.getElementById('video');
+  const canvas = document.getElementById('overlay');
+  const ctx = canvas.getContext('2d');
+  const placeholder = document.getElementById('placeholder');
+  const startBtn = document.getElementById('startBtn');
+  const stopBtn = document.getElementById('stopBtn');
+  const status = document.getElementById('status');
+
+  let stream = null;
+  let rafId = null;
+
+  // Called once per video frame while the camera is running.
+  // Hook MediaPipe in here later, e.g.:
+  //   const result = poseLandmarker.detectForVideo(video, timestamp);
+  //   ...draw result.landmarks onto ctx...
+  function onFrame(video, ctx, timestamp) {
+    ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+  }
+
+  function loop(timestamp) {
+    if (!stream) return;
+    if (video.readyState >= 2) onFrame(video, ctx, timestamp);
+    rafId = requestAnimationFrame(loop);
+  }
+
+  async function start() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      status.textContent = 'This browser does not support camera access (it needs https or localhost).';
+      return;
+    }
+    startBtn.disabled = true;
+    status.textContent = 'Requesting camera…';
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } },
+        audio: false
+      });
+    } catch (err) {
+      stream = null;
+      startBtn.disabled = false;
+      status.textContent = err.name === 'NotAllowedError'
+        ? 'Camera permission was denied. Allow it in your browser settings and try again.'
+        : 'Could not start the camera: ' + err.message;
+      return;
+    }
+    video.srcObject = stream;
+    await video.play();
+    // Match the drawing surface to the real camera resolution.
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    video.hidden = false;
+    canvas.hidden = false;
+    placeholder.hidden = true;
+    stopBtn.disabled = false;
+    status.textContent = 'Camera on (' + video.videoWidth + '×' + video.videoHeight + ')';
+    rafId = requestAnimationFrame(loop);
+  }
+
+  function stop() {
+    if (rafId) cancelAnimationFrame(rafId);
+    rafId = null;
+    if (stream) stream.getTracks().forEach(t => t.stop());
+    stream = null;
+    video.srcObject = null;
+    video.hidden = true;
+    canvas.hidden = true;
+    placeholder.hidden = false;
+    startBtn.disabled = false;
+    stopBtn.disabled = true;
+    status.textContent = 'Camera off';
+  }
+
+  startBtn.addEventListener('click', start);
+  stopBtn.addEventListener('click', stop);
+})();
+</script>
 
 </body>
 </html>
